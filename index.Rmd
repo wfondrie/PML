@@ -1,0 +1,89 @@
+---
+title: "PML Course Project"
+author: "Will Fondrie"
+date: "September 27, 2015"
+output: html_document
+---
+
+## Introduction
+This is the report the accompany the Practical Machine Learning course project. The dataset used in this analysis was the [Weight Lifting Exercise Dataset](http://groupware.les.inf.puc-rio.br/har ). Minimal exploratory analysis was performed before applying a random forest model to create the final predictions.
+
+## Methods
+
+First, necessary libraries were loaded and a seed was set for reproducibility
+```{r, message=FALSE, warning=FALSE}
+library(ggplot2)
+library(caret)
+library(plyr)
+library(reshape2)
+set.seed(1234)
+```
+
+The provided training and testing datasets were downloaded and read into R. The "test.csv" data was actually designated as validation, because a separate test set was produce to evaluate the model before prediction.
+```{r, message=FALSE, warning=FALSE}
+download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv", "data.csv")
+download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv", "test.csv")
+
+dat <- read.csv("data.csv")
+val <- read.csv("test.csv")
+```
+
+Crude variable selection was performed by selecting numeric variable that did not contain NA's in the validation dataset. In this way, only variables that could potentially have predictive value were selected. 
+
+```{r}
+selectVars <- function(df) {
+    facs <- c("user_name","cvtd_timestamp","classe") #dont change to numeric
+    for(i in 1:ncol(df)) {
+        if(!(names(df)[i] %in% facs)) {
+            df[,i] <- as.numeric(df[,i])
+            if(is.na(mean(df[,i]))) {
+                names(df)[i] <- "drop"
+            }
+        } 
+    }
+    drop <- c("X","new_window", grep("drop",names(df),value=T))
+    df <- df[,!(names(df) %in% drop)]
+}
+
+val <- selectVars(val)
+dat <- dat[,c(names(val[,1:(length(names(val))-1)]),"classe")]
+```
+
+The provided training data was then divided into a training and test set. A model was trained using all of the selected variables in a random forest algorithm. The value for mtry was specified to reduce computational time. 
+
+```{r, warning=FALSE}
+inTrain <- createDataPartition(dat$classe, p = 0.7, list = F)
+training <- dat[inTrain,]
+testing <- dat[-inTrain,]
+
+mod <- train(classe~., data=training, method="rf",
+             tuneGrid = data.frame(.mtry =sqrt(ncol(training)-1)),
+             trControl=trainControl(method="none"))
+```
+
+## Results
+
+To assess the accuracy of the model before prediction for assignment submission, the accuracy of the model was evaluated on the designated test dataset. This approach revealed an accuracy of > 0.99, a threshold decided to be good enough to continue
+
+```{r, warning=FALSE}
+testPred <- predict(mod, newdata = testing)
+confusionMatrix(testPred,testing$classe)
+```
+
+Finally, the model was used to predict the appropriate "classe" for the validation dataset (used for assignment submission). This was shown to be %100 accurate.
+
+```{r, warning=FALSE}
+valPred <- predict(mod, newdata = val)
+
+answers <- (as.character(valPred))
+
+pml_write_files = function(x){
+    n = length(x)
+    for(i in 1:n){
+        filename = paste0("problem_id_",i,".txt")
+        write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+    }
+}
+
+pml_write_files(answers)
+```
